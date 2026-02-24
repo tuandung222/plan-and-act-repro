@@ -1,283 +1,314 @@
 # Reproduction Plan - Plan-and-Act (arXiv:2503.09572v3)
 
 Navigation:
-- Reading hub: [`READING_GUIDE.md`](../READING_GUIDE.md)
-- Project README: [`README.md`](../../README.md)
-- Paper review: [`PLAN_AND_ACT_REVIEW.md`](../analysis/PLAN_AND_ACT_REVIEW.md)
-- Notebook demo: [`notebooks/01_plan_and_act_real_tool_demo.ipynb`](../../notebooks/01_plan_and_act_real_tool_demo.ipynb)
+- Reading hub: [`../READING_GUIDE.md`](../READING_GUIDE.md)
+- Project README: [`../../README.md`](../../README.md)
+- Paper review: [`../analysis/PLAN_AND_ACT_REVIEW.md`](../analysis/PLAN_AND_ACT_REVIEW.md)
+- Notebook demo: [`../../notebooks/01_plan_and_act_real_tool_demo.ipynb`](../../notebooks/01_plan_and_act_real_tool_demo.ipynb)
 
-## 0) Mục tiêu tái hiện (reproduce target)
+## 1. Reproduction Objectives
 
-Mục tiêu thực tế chia 3 mức để dễ kiểm soát kỳ vọng:
+This plan defines three reproducibility targets with increasing rigor.
 
-1. **Level A - Functional Reproduction**
-- Dựng đầy đủ pipeline `Planner -> Executor -> (Dynamic) Replanner`.
-- Chạy end-to-end trên WebArena-Lite-style tasks.
+### Level A - Functional Reproduction
 
-2. **Level B - Method Reproduction**
-- Tái hiện các block chính của paper:
-  - Synthetic Trajectory Generation
-  - Grounded Plan Generation
-  - Synthetic Plan Expansion
-  - Targeted Augmentation
-  - Dynamic Replanning
-  - CoT augmentation
+Goal:
+1. Deliver a complete `Planner -> Executor -> Replanner` runtime.
+2. Run end-to-end episodes with deterministic control flow and typed I/O contracts.
 
-3. **Level C - Performance Reproduction (trend-level)**
-- Tái hiện **xu hướng cải thiện** qua ablation giống paper.
-- Không cam kết tuyệt đối cùng điểm số SOTA do khác model stack (paper dùng nhiều backbone/teacher khác nhau).
+Success criteria:
+1. Repeatable episode execution with stable stop conditions.
+2. Trace logs and artifacts generated for each run.
 
-## 1) Chọn framework agent
+### Level B - Method Reproduction
 
-Framework đề xuất: **LangGraph** (trên LangChain ecosystem), kết hợp WebArena/browser environment.
+Goal:
+Recreate the key method blocks from the paper:
+1. Synthetic trajectory generation.
+2. Grounded plan generation.
+3. Plan expansion.
+4. Targeted augmentation.
+5. Dynamic replanning.
+6. CoT-aware variants.
 
-Lý do chọn:
-1. Dễ mô hình hóa graph nhiều node (Planner, Executor, Replanner, Judge).
-2. Dễ kiểm soát state, retry, checkpoint, trace.
-3. Dễ mở rộng từ baseline sang dynamic replanning mà không phá kiến trúc.
-4. Dễ đọc cho researcher (flow rõ ràng theo graph/state machine).
+Success criteria:
+1. All method blocks exist as executable modules or scripts.
+2. Each block has explicit inputs, outputs, and validation checks.
 
-Note:
-- Dù benchmark chính vẫn bám paper (WebArena/WebVoyager), framework implementation được thiết kế theo hướng **domain-agnostic** để tái sử dụng cho API/tool/data-workflow agents.
+### Level C - Performance Reproduction (Trend-Oriented)
 
-## 2) Stack kỹ thuật đề xuất
+Goal:
+Reproduce the **ablation trend shape** from the paper.
 
-1. **Model API**
-- Primary: `gpt-4` (theo yêu cầu của bạn).
-- Cấu hình qua env var `OPENAI_API_KEY`, tuyệt đối không hard-code key trong source.
+Important constraint:
+Absolute parity with reported SOTA numbers is not guaranteed due to differences in model stack, teacher pipelines, and benchmark environment drift.
 
-2. **Core libs**
-- `python>=3.11`
-- `langgraph`, `langchain`, `openai`, `pydantic`, `typer`
-- `playwright` (nếu cần browser control ngoài benchmark harness)
-- `pandas`, `numpy`, `scikit-learn` (analysis)
-- `orjson`, `pyyaml`, `rich`, `tenacity`
+Success criteria:
+1. Directional gains are consistent with method additions.
+2. Evaluation artifacts are complete and auditable.
 
-3. **Experiment tracking**
-- Ưu tiên `mlflow` hoặc `wandb` (chọn 1).
-- Log đầy đủ: config, seed, prompt version, model version, metric theo split.
+## 2. Framework Decision
 
-## 3) Cấu trúc mã nguồn chuẩn (clean + research-friendly)
+Selected framework: **LangGraph** (with LangChain ecosystem support).
+
+Rationale:
+1. Explicit graph semantics for long-horizon orchestration.
+2. Deterministic transition control and stop-condition management.
+3. Strong fit for modular multi-role agent design.
+4. Clear state machine mental model for AI researchers and agent architects.
+
+Design policy:
+Even when reproducing a web-agent paper, implementation should remain **domain-agnostic**. Browser/web is one adapter, not the entire architecture.
+
+## 3. Technical Stack
+
+### 3.1 Model layer
+
+Primary target model in this workspace:
+1. `gpt-4` via `OPENAI_API_KEY`
+
+Operational rules:
+1. No hard-coded credentials.
+2. Credentials loaded from environment only.
+3. Prompt/model selection from config, not source edits.
+
+### 3.2 Core libraries
+
+1. `python>=3.11`
+2. `langgraph`, `langchain`, `openai`, `pydantic`, `typer`
+3. `pyyaml`, `orjson`, `python-dotenv`, `tenacity`, `rich`
+4. Optional benchmark/runtime tooling as needed (`playwright`, data science stack)
+
+### 3.3 Experiment tracking
+
+Recommended:
+1. Use one primary tracker (`mlflow` or `wandb`).
+2. Persist config hash, model versions, prompt versions, seed, and metric snapshots.
+
+## 4. Repository Design Standards
+
+This repository should remain readable for AI researchers, data scientists, and agent architects.
+
+Mandatory standards:
+1. Schema-first boundaries with strict typing.
+2. Config-driven runtime behavior.
+3. Side-effect isolation between runtime, data generation, and training export.
+4. Clear module ownership (`agents`, `graph`, `environments`, `tools`, `tracing`, `training`).
+5. Tests for parser behavior, state transitions, and stop conditions.
+
+## 5. Current and Target Structure
 
 ```text
 plan_and_act_repro/
   README.md
-  REPRODUCTION_PLAN.md
   pyproject.toml
-  .env.example
-  .gitignore
-
   configs/
     base.yaml
     models.yaml
-    data.yaml
-    eval.yaml
+    tracing.yaml
     prompts/
       planner.yaml
       executor.yaml
       replanner.yaml
       cot.yaml
-
-  src/
-    plan_and_act/
-      __init__.py
-      core/
-        state.py
-        types.py
-        schemas.py
-      agents/
-        planner.py
-        executor.py
-        replanner.py
-        judge.py
-      graph/
-        workflow.py
-        transitions.py
-      data/
-        trajectory_gen.py
-        grounded_plan_gen.py
-        plan_expansion.py
-        targeted_augmentation.py
-      training/
-        build_sft_data.py
-        dataset_checks.py
-      eval/
-        runner.py
-        metrics.py
-        ablation.py
-      prompts/
-        templates.py
-      utils/
-        io.py
-        logging.py
-        seeding.py
-
+  src/plan_and_act/
+    core/
+    agents/
+    graph/
+    environments/
+    tools/
+    tracing/
+    data/
+    training/
+    eval/
+    prompts/
+    utils/
   scripts/
-    setup_env.sh
-    run_baseline.sh
-    run_ablation.sh
-    run_eval_webarena_lite.sh
-    generate_synthetic_data.sh
-
   data/
-    raw/
-    interim/
-    processed/
-    synthetic/
-
   artifacts/
-    runs/
-    checkpoints/
-    reports/
-
   notebooks/
-    01_data_audit.ipynb
-    02_ablation_analysis.ipynb
-
   tests/
-    test_planner_output_schema.py
-    test_executor_action_schema.py
-    test_replanning_transition.py
+  docs/
 ```
 
-## 4) Kế hoạch triển khai theo phase
+## 6. Implementation Roadmap
 
-## Phase 1 - Baseline hệ thống (3-4 ngày)
-1. Dựng skeleton project + config system.
-2. Dựng LangGraph workflow bản tối thiểu:
-- `Planner -> Executor -> Stop/Continue`.
-3. Chuẩn hóa schema I/O bằng Pydantic:
-- PlanStep, Action, Observation, EpisodeState.
-4. Chạy smoke test 5-10 task nhỏ.
+### Phase 1 - Runtime Baseline (3-4 days)
 
-Deliverable:
-- End-to-end run được, log đầy đủ trace từng step.
+Scope:
+1. Bootstrap project skeleton and configuration layer.
+2. Implement minimal LangGraph workflow.
+3. Define Pydantic schemas for plan/action/state.
+4. Add simulator environment for deterministic smoke tests.
 
-## Phase 2 - Static Plan-and-Act (4-6 ngày)
-1. Planner sinh structured plan nhiều bước.
-2. Executor nhận plan + obs, sinh action hợp lệ.
-3. Evaluation harness cho WebArena-Lite split.
-4. Báo cáo baseline:
-- No Planner vs Static Planner.
+Deliverables:
+1. End-to-end baseline run command.
+2. Initial test suite for schema and transition sanity.
 
-Deliverable:
-- Báo cáo `artifacts/reports/phase2_baseline.md`.
+Exit criteria:
+1. One-command run succeeds deterministically.
+2. Stop conditions are enforced and tested.
 
-## Phase 3 - Synthetic data pipeline (7-10 ngày)
-1. **Trajectory Generation**:
-- Từ seed query sinh query mới.
-- Rollout actor để thu trajectories.
-- Filter success/failure bằng judge/ORM-equivalent.
-2. **Grounded Plan Generation**:
-- Reverse-engineer plan từ trajectory.
-- Map plan step <-> action span.
-3. **Plan Expansion**:
-- Sinh thêm query-plan pairs đa dạng.
-4. **Targeted Augmentation**:
-- Phân loại failure modes.
-- Sinh dữ liệu tập trung vào nhóm lỗi.
+### Phase 2 - Static Plan-and-Act (4-6 days)
 
-Deliverable:
-- Bộ dữ liệu synthetic versioned + data cards.
+Scope:
+1. Planner emits structured multi-step plans.
+2. Executor consumes current plan step and emits one action.
+3. Add basic evaluation harness and run reporting.
 
-## Phase 4 - Dynamic replanning + CoT (5-7 ngày)
-1. Replanning mỗi bước (bản faithful với paper).
-2. Bổ sung CoT traces cho Planner/Executor.
-3. Ablation theo đúng thứ tự paper:
-- `No Planner`
-- `+Static Planner`
-- `+Synthetic Traj`
-- `+Plan Expansion`
-- `+Targeted Aug`
-- `+Dynamic Replan`
-- `+CoT`
+Deliverables:
+1. Baseline report comparing no-planner vs static planner.
+2. Trace visibility for planner/executor I/O.
 
-Deliverable:
-- Bảng metric so sánh đầy đủ và đồ thị xu hướng.
+Exit criteria:
+1. Static-plan episodes are reproducible.
+2. Output schemas are stable under test.
 
-## Phase 5 - Research report & packaging (2-3 ngày)
-1. Viết report chuẩn research blog + kỹ thuật.
-2. Chuẩn hóa scripts 1-lệnh để chạy từng ablation.
-3. Viết reproducibility checklist.
+### Phase 3 - Data-Centric Pipeline (7-10 days)
 
-Deliverable:
-- `artifacts/reports/final_reproduction_report.md`
-- Public repo sạch, dễ đọc, có guideline chạy lại.
+Scope:
+1. Synthetic trajectory generation.
+2. Grounded plan extraction with plan-step/action-span mapping.
+3. Synthetic plan expansion.
+4. Targeted augmentation from failure taxonomy.
 
-## 5) Thiết kế prompts/schemas (chuẩn hoá ngay từ đầu)
+Deliverables:
+1. Versioned synthetic datasets.
+2. Data cards and quality-gate summaries.
 
-1. Planner output bắt buộc JSON schema:
-- `goal`
-- `steps[]` gồm `step_id`, `intent`, `success_criteria`
+Exit criteria:
+1. Datasets pass structural and logical consistency checks.
+2. Provenance is traceable from generated sample to source seed.
 
-2. Executor output bắt buộc JSON schema:
-- `action_type`
-- `target`
-- `arguments`
-- `rationale` (tuỳ bật CoT)
+### Phase 4 - Dynamic Replanning and CoT (5-7 days)
 
-3. Replanner input nên gồm:
-- original goal
-- previous plan
-- executed actions
-- latest observation
-- failure hint (nếu có)
+Scope:
+1. Replanning loop integration and trigger policy.
+2. CoT-aware prompt/data variants.
+3. Full ablation suite matching paper methodology.
 
-## 6) Bộ metric cần theo dõi
+Deliverables:
+1. Ablation table and trend plots.
+2. Cost/latency/performance analysis.
 
-1. Task Success Rate (primary).
-2. Plan validity rate (đúng schema + khả thi).
-3. Action grounding accuracy.
-4. Replan efficiency:
-- số lần replan/episode
-- token cost/episode
-- latency/episode
-5. Failure taxonomy:
+Exit criteria:
+1. Trend gains align with method increments.
+2. Runtime remains bounded with explicit guardrails.
+
+### Phase 5 - Packaging and Reproducibility Audit (2-3 days)
+
+Scope:
+1. Final report and reproducibility checklist.
+2. Scripted one-command workflows for key experiments.
+3. Artifact manifest and integrity checks.
+
+Deliverables:
+1. `artifacts/reports/final_reproduction_report.md`
+2. Reproducible command matrix for baseline + ablations.
+
+Exit criteria:
+1. Another researcher can reproduce key experiments from docs and scripts.
+
+## 7. Prompt and Schema Contracts
+
+### Planner output contract
+
+```json
+{
+  "goal": "string",
+  "steps": [
+    {
+      "step_id": 1,
+      "intent": "string",
+      "success_criteria": "string"
+    }
+  ]
+}
+```
+
+### Executor output contract
+
+```json
+{
+  "action_type": "click|type|search|exit",
+  "target": "string",
+  "arguments": {},
+  "rationale": "string",
+  "is_final": false,
+  "final_answer": "string"
+}
+```
+
+### Replanner input contract
+
+Should include:
+1. Original goal.
+2. Previous plan.
+3. Action history.
+4. Latest observation.
+5. Optional failure hint/reason.
+
+## 8. Evaluation and Metrics
+
+Primary metric:
+1. Task success rate.
+
+Secondary metrics:
+1. Plan validity rate.
+2. Action grounding quality.
+3. Replanning efficiency:
+- replans per episode
+- token usage
+- latency
+4. Failure taxonomy distribution:
 - planning error
 - grounding error
-- observation misunderstanding
-- loop/stuck error
+- observation misinterpretation
+- loop/stuck behavior
 
-## 7) Risk & kiểm soát rủi ro
+## 9. Risk Register and Mitigations
 
-1. **API chi phí cao**
-- Giới hạn token, batch chạy nhỏ trước.
-- Cache prompt-response khi phù hợp.
+1. API cost escalation.
+- Mitigation: strict budgets, caching where valid, smaller pilot runs first.
 
-2. **Benchmark instability**
-- Freeze seed + snapshot config + run metadata.
+2. Benchmark instability.
+- Mitigation: fixed seeds, config snapshots, run manifests.
 
-3. **Data drift từ synthetic loop**
-- Áp quality gates (schema check, dedup, contradiction filter).
+3. Synthetic data drift.
+- Mitigation: quality gates, deduplication, contradiction checks.
 
-4. **Overfitting prompt**
-- Tách validation set cố định cho từng website/task type.
+4. Prompt overfitting.
+- Mitigation: fixed held-out validation tasks and website splits.
 
-## 8) Coding standards (cho audience researcher)
+5. Hidden runtime loops.
+- Mitigation: explicit max-step stop conditions and tested transition logic.
 
-1. Type hints 100% cho core modules.
-2. Pydantic schemas cho mọi boundary I/O.
-3. Docstring ngắn, đúng ý nghĩa nghiên cứu.
-4. Unit tests cho parser/schema/transition logic.
-5. Không viết business logic trong notebook.
-6. Config-driven, không hard-code model/prompt/path.
+## 10. Coding and Research Standards
 
-## 9) Quy ước chạy thí nghiệm
+1. Type hints and schema validation at boundaries.
+2. No hidden business logic in notebooks.
+3. Config-first runtime and prompt management.
+4. Small, testable modules with explicit ownership.
+5. Every major change has a focused ablation or targeted test.
 
-1. Mỗi run có `run_id` + commit hash + config hash.
-2. Mỗi bảng kết quả phải có script tái tạo.
-3. Mỗi cải tiến phải có ablation độc lập.
-4. Kết luận chỉ dựa trên run đã log artifact đầy đủ.
+## 11. Experiment Governance
 
-## 10) Security note rất quan trọng
+1. Every run must have a unique `run_id`.
+2. Record commit hash and config hash.
+3. Store model and prompt versions.
+4. Keep command reproducibility for every table/plot.
+5. Draw conclusions only from logged and auditable artifacts.
 
-Bạn đã gửi API key trong chat. Khuyến nghị:
-1. **Rotate key ngay** trong OpenAI dashboard.
-2. Chỉ dùng key mới qua biến môi trường cục bộ (`OPENAI_API_KEY`).
-3. Không commit key vào git, notebook output, log, hay markdown.
+## 12. Security and Secret Hygiene
 
-## 11) Kết luận lựa chọn thực thi
+1. Never commit API keys, `.env`, or secret-bearing notebook outputs.
+2. Rotate exposed keys immediately.
+3. Apply trace redaction for key-like patterns in prompts/responses.
 
-Nếu mục tiêu là “linh hoạt, dễ hiện thực, dễ mở rộng, dễ đọc cho researcher”, thì:
-1. **LangGraph + schema-first design + config-driven experiments** là lựa chọn phù hợp nhất.
-2. Triển khai theo 5 phase ở trên sẽ vừa giữ chất lượng kỹ thuật, vừa bám sát đóng góp cốt lõi của paper.
+## 13. Final Recommendation
+
+For a clean and scalable reproduction of Plan-and-Act:
+1. Use LangGraph orchestration with schema-first boundaries.
+2. Prioritize planner-data quality before model-size escalation.
+3. Treat tracing as a first-class data pipeline, not just runtime logging.
+4. Evaluate by ablation trends and failure taxonomy, not only final headline scores.

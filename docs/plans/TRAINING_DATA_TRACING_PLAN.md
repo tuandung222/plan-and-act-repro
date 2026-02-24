@@ -1,125 +1,155 @@
-# Training Data Tracing Implementation Plan (Paper-Aligned)
+# Training-Data Tracing Implementation Plan (Paper-Aligned)
 
 Navigation:
-- Reading hub: [`READING_GUIDE.md`](../READING_GUIDE.md)
+- Reading hub: [`../READING_GUIDE.md`](../READING_GUIDE.md)
 - Reproduction roadmap: [`REPRODUCTION_PLAN.md`](REPRODUCTION_PLAN.md)
-- Architecture guide: [`AGENT_FRAMEWORK_ARCHITECTURE.md`](../architecture/AGENT_FRAMEWORK_ARCHITECTURE.md)
-- Code root: [`src/plan_and_act/`](../../src/plan_and_act/)
+- Architecture guide: [`../architecture/AGENT_FRAMEWORK_ARCHITECTURE.md`](../architecture/AGENT_FRAMEWORK_ARCHITECTURE.md)
+- Code root: [`../../src/plan_and_act/`](../../src/plan_and_act/)
 
-## 1) Mục tiêu
+## 1. Objective
 
-Mục tiêu tài liệu này là lên kế hoạch hiện thực **data tracing phục vụ training** giống paper Plan-and-Act, gồm:
-1. Tracing action trajectories
-2. Tracing grounded-plan annotations (plan step <-> action span)
-3. Tracing replanning samples
-4. Tracing CoT training samples
-5. Tracing failure taxonomy + targeted augmentation
+This document defines how to implement **trace collection as a training-data pipeline** aligned with Plan-and-Act methodology.
 
-Mục tiêu cuối cùng: sinh được bộ dữ liệu chuẩn để train:
-- Planner SFT
-- Executor SFT
-- Replanner SFT
-- (Optional) CoT-enhanced SFT
+Target outputs:
+1. Action trajectory traces.
+2. Grounded-plan annotations (plan-step to action-span mapping).
+3. Replanning training samples.
+4. CoT-oriented training samples (where policy permits).
+5. Failure taxonomy traces for targeted augmentation.
 
-## 2) Bám sát paper: cần trace những gì
+End goal:
+Produce auditable datasets for:
+1. Planner SFT.
+2. Executor SFT.
+3. Replanner SFT.
+4. Optional CoT-enhanced variants.
 
-Theo pipeline paper (Section 4.x + 3.3 + 3.4), ta cần trace các lớp dữ liệu sau:
+## 2. What Must Be Traced (Paper-Aligned Coverage)
 
-1. **Action Trajectory Generation (4.1)**
-- Query seed
-- Synthetic query
-- Full trajectory (obs/action/tool result/reward)
-- Pass/fail của judge/ORM
+### 2.1 Action trajectory generation
 
-2. **Grounded Plan Generation (4.2)**
-- Trajectory đã pass
-- Plan được annotate
-- Mapping step -> action indices
+Capture:
+1. Seed query and synthetic query provenance.
+2. Full step timeline (observation, action, tool result, transition).
+3. Pass/fail judgments and reason codes.
 
-3. **Synthetic Plan Expansion (4.3)**
-- Seed query-plan pairs
-- Expanded query-plan pairs
-- Provenance: generated-from seed nào
+### 2.2 Grounded plan generation
 
-4. **Dynamic Replanning Data (4.2.1 + 3.3)**
-- Prefix trajectory + previous plan
-- Observation tại thời điểm replan
-- Replanned steps
+Capture:
+1. Source trajectory ID.
+2. Plan text and structure.
+3. Step-to-action index alignment.
 
-5. **CoT Traces (4.2.2 + 3.4)**
-- Planner CoT traces
-- Executor CoT traces
-- Optional replanner CoT traces
+### 2.3 Synthetic plan expansion
 
-6. **Failure Classification + Targeted Augmentation (4.3)**
-- Failure label taxonomy
-- Link từ failure -> selected seeds -> generated targeted data
+Capture:
+1. Seed query-plan pair ID.
+2. Expanded pair ID.
+3. Transformation metadata and generator version.
 
-## 3) Thiết kế trace schema (chuẩn hóa trước khi code)
+### 2.4 Dynamic replanning
+
+Capture:
+1. Pre-replan state slice.
+2. Observation at replan time.
+3. New plan and rationale metadata.
+
+### 2.5 CoT traces
+
+Capture (subject to policy and security constraints):
+1. Planner reasoning trace metadata.
+2. Executor reasoning trace metadata.
+3. Replanner reasoning trace metadata.
+
+### 2.6 Failure taxonomy and targeted augmentation
+
+Capture:
+1. Failure class label.
+2. Trigger conditions.
+3. Link from failure class to generated targeted samples.
+
+## 3. Canonical Trace Schemas
 
 ## 3.1 Session-level trace
-File: `data/raw/traces/<run_id>/session.json`
+
+Path:
+`data/raw/traces/<run_id>/session.json`
+
+Example:
 
 ```json
 {
-  "run_id": "20260219T...Z",
+  "schema_version": "1.0",
+  "run_id": "20260224T120000Z",
   "goal": "...",
-  "environment": "tool|simulator|webarena",
-  "model_stack": {
-    "planner": "gpt-4",
-    "executor": "gpt-4",
-    "replanner": "gpt-4"
+  "environment": {
+    "kind": "tool",
+    "name": "tool_calling"
   },
-  "config_hash": "...",
-  "git_commit": "...",
+  "model_stack": {
+    "planner": {"provider": "openai", "model": "gpt-4"},
+    "executor": {"provider": "openai", "model": "gpt-4"},
+    "replanner": {"provider": "openai", "model": "gpt-4"}
+  },
+  "runtime_config": {
+    "max_steps": 8,
+    "dynamic_replanning": true,
+    "use_cot": false
+  },
   "started_at": "...",
-  "finished_at": "..."
-}
-```
-
-## 3.2 Step-level event trace (JSONL)
-File: `data/raw/traces/<run_id>/events.jsonl`
-
-Mỗi event 1 dòng JSON, có `event_type`:
-- `planner_input`
-- `planner_output`
-- `executor_input`
-- `executor_output`
-- `tool_call`
-- `environment_step`
-- `judge_result`
-- `replanner_input`
-- `replanner_output`
-- `episode_end`
-
-Event format tối thiểu:
-```json
-{
-  "run_id": "...",
-  "step": 3,
-  "event_type": "executor_output",
-  "timestamp": "...",
-  "payload": {...},
-  "meta": {
-    "latency_ms": 123,
-    "tokens_prompt": 0,
-    "tokens_completion": 0
+  "finished_at": "...",
+  "status": "completed",
+  "summary": {
+    "event_count": 42
   }
 }
 ```
 
-## 3.3 Normalized trajectory record
-File: `data/interim/trajectories/<split>.jsonl`
+## 3.2 Event-level trace (JSONL)
+
+Path:
+`data/raw/traces/<run_id>/events.jsonl`
+
+Each line should contain:
 
 ```json
 {
-  "trajectory_id": "traj_...",
+  "schema_version": "1.0",
+  "run_id": "...",
+  "event_type": "executor_output",
+  "step": 3,
+  "timestamp": "...",
+  "payload": {},
+  "meta": {
+    "latency_ms": 123.4,
+    "prompt_tokens": 120,
+    "completion_tokens": 45
+  }
+}
+```
+
+Required event families:
+1. `planner_input`, `planner_output`
+2. `executor_input`, `executor_output`
+3. `environment_step`
+4. `tool_call_start`, `tool_call_end` (if applicable)
+5. `replanner_input`, `replanner_output` (if applicable)
+6. `episode_end` or `episode_error`
+
+## 3.3 Normalized trajectory record
+
+Path:
+`data/interim/trajectories/<split>.jsonl`
+
+```json
+{
+  "trajectory_id": "traj_001",
   "query": "...",
   "steps": [
     {
       "obs_before": "...",
-      "action": {...},
-      "tool_result": {...},
+      "action": {},
+      "tool_result": {},
       "obs_after": "...",
       "done": false
     }
@@ -127,16 +157,20 @@ File: `data/interim/trajectories/<split>.jsonl`
   "final_answer": "...",
   "success": true,
   "judge_score": 1.0,
-  "provenance": {...}
+  "provenance": {
+    "run_id": "..."
+  }
 }
 ```
 
 ## 3.4 Grounded-plan record
-File: `data/interim/grounded_plans/<split>.jsonl`
+
+Path:
+`data/interim/grounded_plans/<split>.jsonl`
 
 ```json
 {
-  "trajectory_id": "...",
+  "trajectory_id": "traj_001",
   "query": "...",
   "plan": [
     {
@@ -146,130 +180,136 @@ File: `data/interim/grounded_plans/<split>.jsonl`
       "action_indices": [0, 1]
     }
   ],
-  "source": "teacher_model_name"
+  "source": {
+    "teacher_model": "...",
+    "generator_version": "..."
+  }
 }
 ```
 
-## 3.5 SFT records
+## 3.5 SFT record outputs
+
+Recommended paths:
+1. `data/processed/sft/planner_sft.jsonl`
+2. `data/processed/sft/executor_sft.jsonl`
+3. `data/processed/sft/replanner_sft.jsonl`
+4. `data/processed/sft/planner_cot_sft.jsonl` (optional)
+5. `data/processed/sft/executor_cot_sft.jsonl` (optional)
+
+## 4. Trace Hook Points in Current Codebase
+
+### 4.1 LLM boundary hooks
+
 Files:
-- `data/processed/sft/planner_sft.jsonl`
-- `data/processed/sft/executor_sft.jsonl`
-- `data/processed/sft/replanner_sft.jsonl`
-- `data/processed/sft/planner_cot_sft.jsonl` (optional)
-- `data/processed/sft/executor_cot_sft.jsonl` (optional)
+1. [`../../src/plan_and_act/utils/llm.py`](../../src/plan_and_act/utils/llm.py)
+2. [`../../src/plan_and_act/agents/planner.py`](../../src/plan_and_act/agents/planner.py)
+3. [`../../src/plan_and_act/agents/executor.py`](../../src/plan_and_act/agents/executor.py)
+4. [`../../src/plan_and_act/agents/replanner.py`](../../src/plan_and_act/agents/replanner.py)
 
-## 4) Điểm hook tracing trong code hiện tại
+Log requirements:
+1. Prompt input (with secret redaction).
+2. Raw model output.
+3. Parsed JSON output.
+4. Parse failures and error reasons.
+5. Latency and token usage if available.
 
-## 4.1 LLM tracing
-File cần chỉnh:
-- `src/plan_and_act/utils/llm.py`
+### 4.2 Graph node hooks
 
-Hook:
-1. Trước call model: log `model`, `temperature`, prompt id/hash, input payload hash
-2. Sau call model: log raw output, parse status, latency, token usage
-3. Khi parse lỗi JSON: log raw output + exception để debug training-data noise
-
-## 4.2 Graph/node tracing
 Files:
-- `src/plan_and_act/graph/workflow.py`
-- `src/plan_and_act/eval/runner.py`
+1. [`../../src/plan_and_act/graph/workflow.py`](../../src/plan_and_act/graph/workflow.py)
+2. [`../../src/plan_and_act/eval/runner.py`](../../src/plan_and_act/eval/runner.py)
 
-Hook:
-1. `planner_node`: input snapshot + output plan
-2. `executor_node`: current step + action output + env transition
-3. `replanner_node`: context trước/sau replan
-4. kết thúc episode: success/failure + stop reason
+Log requirements:
+1. Planner node input/output.
+2. Executor node input/action/output transition.
+3. Replanner node input/output.
+4. Episode terminal summary and failure reasons.
 
-## 4.3 Tool/environment tracing
+### 4.3 Tool and environment hooks
+
 Files:
-- `src/plan_and_act/environments/tooling.py`
-- `src/plan_and_act/tools/base.py`
+1. [`../../src/plan_and_act/environments/tooling.py`](../../src/plan_and_act/environments/tooling.py)
+2. [`../../src/plan_and_act/tools/base.py`](../../src/plan_and_act/tools/base.py)
 
-Hook:
-1. Tool name, arguments, result, error
-2. Action->tool routing decision (`action_type_tool_map` hay `target=tool:*`)
-3. Environment observation transitions
+Log requirements:
+1. Tool selection decision.
+2. Tool name, arguments shape, result, error.
+3. Environment observation transition before/after step.
 
-## 4.4 Data pipeline tracing
+### 4.4 Data-pipeline hooks
+
 Files:
-- `src/plan_and_act/data/trajectory_gen.py`
-- `src/plan_and_act/data/grounded_plan_gen.py`
-- `src/plan_and_act/data/plan_expansion.py`
-- `src/plan_and_act/data/targeted_augmentation.py`
-- `src/plan_and_act/training/build_sft_data.py`
+1. [`../../src/plan_and_act/data/trajectory_gen.py`](../../src/plan_and_act/data/trajectory_gen.py)
+2. [`../../src/plan_and_act/data/grounded_plan_gen.py`](../../src/plan_and_act/data/grounded_plan_gen.py)
+3. [`../../src/plan_and_act/data/plan_expansion.py`](../../src/plan_and_act/data/plan_expansion.py)
+4. [`../../src/plan_and_act/data/targeted_augmentation.py`](../../src/plan_and_act/data/targeted_augmentation.py)
+5. [`../../src/plan_and_act/training/build_sft_data.py`](../../src/plan_and_act/training/build_sft_data.py)
 
-Hook:
-1. provenance của mỗi sample
-2. source record ids
-3. filtering decisions (pass/fail + reason)
-4. final export counts per dataset
+Log requirements:
+1. Source IDs and lineage links.
+2. Filtering decisions and quality-gate reasons.
+3. Export counts and schema-validation summaries.
 
-## 5) Kế hoạch triển khai theo phase (thực thi)
+## 5. Phase Plan
 
-## Phase A - Tracing Infrastructure (2-3 ngày)
+### Phase A - Tracing Infrastructure (2-3 days)
 
 Deliverables:
-1. `src/plan_and_act/tracing/` module mới:
-- `schemas.py` (event/session schemas)
-- `writer.py` (JSON/JSONL writer)
-- `collector.py` (runtime collector)
-2. `configs/tracing.yaml`
-3. bật/tắt tracing bằng config
+1. Stable schemas in `tracing/schemas.py`.
+2. Session/event writer in `tracing/writer.py`.
+3. Runtime collector in `tracing/collector.py`.
+4. Config toggles via `configs/tracing.yaml`.
 
 Acceptance criteria:
-- Mỗi run sinh được `session.json` + `events.jsonl`
-- Overhead tracing < 10% runtime local
+1. Every traced run writes `session.json` and `events.jsonl`.
+2. Trace overhead remains acceptable for local experimentation.
 
-## Phase B - Runtime Hooking (2-4 ngày)
+### Phase B - Runtime Instrumentation (2-4 days)
 
 Deliverables:
-1. Hook vào planner/executor/replanner nodes
-2. Hook vào tool calls và environment transitions
-3. Hook vào LLM client (latency + parse failure + token usage nếu có)
+1. Full planner/executor/replanner event coverage.
+2. Tool-call start/end events with structured payloads.
+3. LLM parse-error and usage metadata captured.
 
 Acceptance criteria:
-- 1 episode có trace end-to-end đầy đủ event sequence
-- replay timeline đọc được theo step
+1. Event sequence supports deterministic replay analysis.
+2. Error paths are represented explicitly, not silently dropped.
 
-## Phase C - Dataset Builders (3-5 ngày)
+### Phase C - Dataset Builders (3-5 days)
 
 Deliverables:
 1. `scripts/trace_to_trajectories.py`
 2. `scripts/trajectories_to_grounded_plans.py`
 3. `scripts/build_sft_from_traces.py`
-4. data cards cho mỗi output dataset
+4. Data cards for generated outputs.
 
 Acceptance criteria:
-- Build được 3 bộ SFT: planner/executor/replanner
-- Dataset checks pass (schema + completeness)
+1. Planner/executor/replanner SFT exports are generated.
+2. Dataset checks pass on structure and consistency.
 
-## Phase D - Paper-specific Augmentation (4-6 ngày)
+### Phase D - Paper-Specific Augmentation (4-6 days)
 
 Deliverables:
-1. failure classifier + taxonomy mapping
-2. targeted plan augmentation pipeline
-3. CoT trace generation pipeline
+1. Failure classifier and taxonomy mapping.
+2. Targeted augmentation generator.
+3. CoT data-generation pipeline (policy-aware).
 
 Acceptance criteria:
-- Có dataset version cho:
-  - base
-  - +synthetic traj
-  - +plan expansion
-  - +targeted
-  - +replanning
-  - +CoT
+1. Dataset variants for each ablation stage are available.
+2. Variant lineage is traceable and auditable.
 
-## Phase E - Reproducibility & Audit (1-2 ngày)
+### Phase E - Reproducibility and Audit (1-2 days)
 
 Deliverables:
-1. manifest theo run (`run_manifest.json`)
-2. dataset provenance graph (`sample_id -> ancestors`)
-3. script `scripts/audit_trace_integrity.py`
+1. Run manifest (`run_manifest.json`) with config/model hashes.
+2. Sample lineage graph (`sample_id -> ancestors`).
+3. Integrity checker (`scripts/audit_trace_integrity.py`).
 
 Acceptance criteria:
-- Từ một sample SFT bất kỳ truy ngược được lineage
+1. Any SFT sample can be traced back to raw events.
+2. Integrity checker reports no critical contract violations.
 
-## 6) Quy ước thư mục dữ liệu đề xuất
+## 6. Data Directory Convention
 
 ```text
 data/
@@ -280,97 +320,97 @@ data/
         events.jsonl
   interim/
     trajectories/
-      train.jsonl
-      val.jsonl
     grounded_plans/
-      train.jsonl
-      val.jsonl
   processed/
     sft/
-      planner_sft.jsonl
-      executor_sft.jsonl
-      replanner_sft.jsonl
-      planner_cot_sft.jsonl
-      executor_cot_sft.jsonl
   synthetic/
     expanded_plans/
     targeted_plans/
 ```
 
-## 7) Data quality gates (bắt buộc)
+## 7. Quality Gates (Mandatory)
 
-1. Schema validation gate
-- reject sample nếu thiếu field quan trọng
+1. Schema validation gate.
+- Reject missing or malformed required fields.
 
-2. Logical consistency gate
-- action_indices phải nằm trong range trajectory steps
-- done/success transition không mâu thuẫn
+2. Logical consistency gate.
+- Validate step ordering, action-index ranges, and terminal flags.
 
-3. Dedup gate
-- hash-based near-duplicate removal cho query-plan pair
+3. Deduplication gate.
+- Remove duplicate or near-duplicate query-plan pairs.
 
-4. Leakage gate
-- không cho sample test xuất hiện trong train provenance
+4. Leakage gate.
+- Prevent test-derived lineage from entering training split.
 
-5. Parse robustness gate
-- tỷ lệ raw model outputs parse fail < threshold
+5. Parse robustness gate.
+- Track and cap parse-failure rate by role/component.
 
-## 8) Mapping trace -> training tasks
+## 8. Mapping Trace Events to Training Tasks
 
-1. Planner SFT
-Input: goal + observation summary + history
-Output: structured plan steps
+### 8.1 Planner SFT
 
-2. Executor SFT
-Input: goal + current_step + current_observation
-Output: action JSON
+Input:
+1. Goal, observation context, action history summary.
 
-3. Replanner SFT
-Input: goal + previous_plan + action_history + latest_observation
-Output: updated plan
+Output:
+1. Structured `PlannerOutput` steps.
 
-4. CoT variants
-Input giống trên
-Output: reasoning + final JSON (hoặc hidden reasoning policy tùy model policy)
+Event anchors:
+1. `planner_input`
+2. `planner_output`
+3. `llm_call` for prompt/output metadata
 
-## 9) Testing plan cho tracing pipeline
+### 8.2 Executor SFT
 
-Unit tests cần thêm:
-1. trace schema validation
-2. trace writer append/flush correctness
-3. action_indices grounding validator
-4. dataset builder mapping correctness
+Input:
+1. Goal, current step, current observation.
 
-Integration tests cần thêm:
-1. run 1 episode -> sinh traces -> build SFT thành công
-2. run tool environment -> trace đủ `tool_call` events
-3. replay timeline từ events.jsonl không lỗi
+Output:
+1. Structured `ExecutorAction`.
 
-## 10) Command plan (khi bắt đầu code)
+Event anchors:
+1. `executor_input`
+2. `executor_output`
+3. `environment_step`
 
-Đề xuất scripts mới:
-1. `scripts/run_episode_with_trace.sh`
-2. `scripts/build_training_data_from_traces.sh`
-3. `scripts/audit_trace_integrity.sh`
+### 8.3 Replanner SFT
 
-Luồng chuẩn:
-```bash
-./scripts/run_episode_with_trace.sh
-./scripts/build_training_data_from_traces.sh
-./scripts/audit_trace_integrity.sh
-pytest -q
-```
+Input:
+1. Previous plan, action history, latest observation.
 
-## 11) Khuyến nghị để giống paper hơn
+Output:
+1. Updated structured plan.
 
-1. tách rõ teacher model cho annotation vs actor model cho rollout
-2. thêm judge/ORM-equivalent score vào trace
-3. track failure classes theo website/domain/task-type
-4. giữ versioned dataset snapshots cho từng ablation stage
+Event anchors:
+1. `replanner_input`
+2. `replanner_output`
 
-## 12) Kết luận
+### 8.4 CoT variants
 
-Nếu triển khai đúng kế hoạch tracing này, framework hiện tại sẽ có:
-1. dữ liệu training có lineage rõ ràng
-2. đủ điều kiện tái hiện các block data-centric của paper
-3. khả năng mở rộng sang paper agent khác chỉ bằng cách thay adapters + annotators
+Input/output:
+1. Same role boundaries as above with optional reasoning traces.
+
+Policy note:
+CoT storage must respect provider policy and internal governance requirements.
+
+## 9. Review and Governance Checklist
+
+Before using traced data for training, confirm:
+1. Event coverage is complete for all enabled modules.
+2. Session summaries and event counts are consistent.
+3. Error and parse-failure paths are represented explicitly.
+4. Dataset lineage is queryable and reproducible.
+5. Redaction policy is active for sensitive fields.
+
+Supporting docs:
+1. [`../tracing/TRACE_DATA_REVIEW_MINDSET.md`](../tracing/TRACE_DATA_REVIEW_MINDSET.md)
+2. [`../tracing/TRACE_DATA_REVIEW_CHECKLIST.md`](../tracing/TRACE_DATA_REVIEW_CHECKLIST.md)
+3. [`../tracing/TRACE_TO_SFT_CODE_REVIEW_WALKTHROUGH.md`](../tracing/TRACE_TO_SFT_CODE_REVIEW_WALKTHROUGH.md)
+
+## 10. Expected Outcome
+
+When this plan is implemented fully, the repository should provide:
+1. A trace pipeline suitable for runtime debugging and model training.
+2. Strong data contracts that reduce silent corruption.
+3. Clear provenance for planner/executor/replanner SFT samples.
+4. A repeatable methodology for reproducing other agent papers with similar data-centric requirements.
