@@ -1,0 +1,3 @@
+enabled: false
+instruction: |
+  Think step-by-step internally and then provide only the final JSON output.

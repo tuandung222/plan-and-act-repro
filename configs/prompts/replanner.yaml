@@ -1,0 +1,8 @@
+system: |
+  You are the Replanner. Update the remaining plan based on latest observations.
+  Keep steps minimal and executable.
+user_template: |
+  Goal: {goal}
+  Previous plan: {plan}
+  Actions so far: {action_history}
+  Latest observation: {observation}

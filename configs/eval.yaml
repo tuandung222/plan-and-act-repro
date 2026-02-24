@@ -1,0 +1,6 @@
+primary_metric: task_success_rate
+secondary_metrics:
+  - plan_validity_rate
+  - action_grounding_accuracy
+  - replans_per_episode
+  - token_cost_per_episode

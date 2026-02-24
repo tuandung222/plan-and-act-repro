@@ -1,0 +1,3 @@
+enabled: false
+base_dir: data/raw/traces
+flush_every: 1

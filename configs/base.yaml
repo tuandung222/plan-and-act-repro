@@ -1,0 +1,7 @@
+experiment_name: plan_and_act_baseline
+seed: 42
+max_steps: 8
+dynamic_replanning: true
+use_cot: false
+save_artifacts: true
+artifact_dir: artifacts/runs

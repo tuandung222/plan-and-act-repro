@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Environment
+.env
+
+# Artifacts
+artifacts/runs/
+artifacts/checkpoints/
+artifacts/reports/*.tmp
+artifacts/reports/*.executed.ipynb
+
+# Data cache
+*.sqlite
+*.db
+data/raw/traces/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store

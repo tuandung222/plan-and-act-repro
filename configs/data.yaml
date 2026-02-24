@@ -1,0 +1,11 @@
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  synthetic: data/synthetic
+
+synthetic:
+  query_generation_seeds: 5
+  query_generation_per_seed: 10
+  plan_expansion_target: 10000
+  targeted_augmentation_target: 5000
